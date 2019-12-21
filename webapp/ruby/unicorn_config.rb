@@ -1,4 +1,5 @@
-worker_processes 2
+# coding: utf-8
+worker_processes 4
 preload_app true
 pid './unicorn.pid'
-listen 8080
+listen File.expand_path(File.dirname(__FILE__), "unicorn.sock")
