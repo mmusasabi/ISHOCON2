@@ -18,7 +18,8 @@ class Ishocon2::WebApp < Sinatra::Base
   set :protection, true
 
   @@names = nil
-
+  @@candi_names = nil
+  
   helpers do
     def config
       @config ||= {
@@ -80,7 +81,17 @@ SQL
 
   configure do
     def c_names
-      @names = db.query('SELECT name FROM candidates').map{|c| c[:name]} unless @names
+      @@names = db.query('SELECT name FROM candidates').map{|c| c[:name]} unless @@names
+      @@names
+    end
+
+    def candi_names
+      unless @@candi_names
+        @@candi_names = Hash[*db.xquery('SELECT id, name FROM candidates').map do |c|
+                              [c[:name], c[:id]]
+                            end.flatten]
+      end
+      @@candi_names
     end
   end
 
@@ -144,14 +155,16 @@ SQL
                      params[:name],
                      params[:address],
                      params[:mynumber]).first
-    candidate = db.xquery('SELECT * FROM candidates WHERE name = ?', params[:candidate]).first
+    candidate = candi_names[params[:candidate]]
+    #binding.pry
+    #candidate = db.xquery('SELECT id FROM candidates WHERE name = ?', params[:candidate]).first
     voted_count = unless user
                     0
                   else
                     ret = db.xquery('SELECT count FROM votes WHERE user_id = ?', user[:id]).first
                     ret ? ret[:count] : 0
                   end
-
+    
     candidates = c_names
     if user.nil?
       return erb :vote, locals: { candidates: candidates, message: '個人情報に誤りがあります' }
@@ -159,7 +172,7 @@ SQL
       return erb :vote, locals: { candidates: candidates, message: '投票数が上限を超えています' }
     elsif params[:candidate].nil? || params[:candidate] == ''
       return erb :vote, locals: { candidates: candidates, message: '候補者を記入してください' }
-    elsif candidate.nil?
+    elsif !candidate
       return erb :vote, locals: { candidates: candidates, message: '候補者を正しく記入してください' }
     elsif params[:keyword].nil? || params[:keyword] == ''
       return erb :vote, locals: { candidates: candidates, message: '投票理由を記入してください' }
@@ -167,7 +180,7 @@ SQL
 
     db.xquery('INSERT INTO votes (user_id, candidate_id, keyword, count) VALUES (?, ?, ?, ?)',
                               user[:id],
-                              candidate[:id],
+                              candidate,
                               params[:keyword],
                               params[:vote_count].to_i
              )
