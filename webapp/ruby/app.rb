@@ -1,7 +1,9 @@
+# coding: utf-8
 require 'sinatra/base'
 require 'mysql2'
 require 'mysql2-cs-bind'
 require 'erubis'
+require 'pry'
 
 module Ishocon2
   class AuthenticationError < StandardError; end
@@ -15,6 +17,8 @@ class Ishocon2::WebApp < Sinatra::Base
   set :public_folder, File.expand_path('../public', __FILE__)
   set :protection, true
 
+  @@names = nil
+  
   helpers do
     def config
       @config ||= {
@@ -47,10 +51,7 @@ class Ishocon2::WebApp < Sinatra::Base
       query = <<SQL
 SELECT c.id, c.name, c.political_party, c.sex, v.count
 FROM candidates AS c
-LEFT OUTER JOIN
-  (SELECT candidate_id, COUNT(*) AS count
-  FROM votes
-  GROUP BY candidate_id) AS v
+LEFT OUTER JOIN votes AS v
 ON c.id = v.candidate_id
 ORDER BY v.count DESC
 SQL
@@ -63,7 +64,7 @@ SELECT keyword
 FROM votes
 WHERE candidate_id IN (?)
 GROUP BY keyword
-ORDER BY COUNT(*) DESC
+ORDER BY SUM(count) DESC
 LIMIT 10
 SQL
       db.xquery(query, candidate_ids).map { |a| a[:keyword] }
@@ -74,6 +75,12 @@ SQL
     end
   end
 
+  configure do
+    def c_names
+      @names = db.query('SELECT name FROM candidates').map{|c| c[:name]} unless @names
+    end
+  end
+  
   get '/' do
     candidates = []
     election_results.each_with_index do |r, i|
@@ -101,7 +108,7 @@ SQL
   get '/candidates/:id' do
     candidate = db.xquery('SELECT * FROM candidates WHERE id = ?', params[:id]).first
     return redirect '/' if candidate.nil?
-    votes = db.xquery('SELECT COUNT(*) AS count FROM votes WHERE candidate_id = ?', params[:id]).first[:count]
+    votes = db.xquery('SELECT count FROM votes WHERE candidate_id = ?', params[:id]).first[:count]
     keywords = voice_of_supporter([params[:id]])
     erb :candidate, locals: { candidate: candidate,
                               votes: votes,
@@ -123,20 +130,26 @@ SQL
   end
 
   get '/vote' do
-    candidates = db.query('SELECT * FROM candidates')
+    candidates = c_names #db.query('SELECT * FROM candidates')
+    #candidates = db.query('SELECT * FROM candidates')
     erb :vote, locals: { candidates: candidates, message: '' }
   end
 
   post '/vote' do
+    puts params
     user = db.xquery('SELECT * FROM users WHERE name = ? AND address = ? AND mynumber = ?',
                      params[:name],
                      params[:address],
                      params[:mynumber]).first
     candidate = db.xquery('SELECT * FROM candidates WHERE name = ?', params[:candidate]).first
-    voted_count =
-      user.nil? ? 0 : db.xquery('SELECT COUNT(*) AS count FROM votes WHERE user_id = ?', user[:id]).first[:count]
+    voted_count = unless user
+                    0
+                  else
+                    ret = db.xquery('SELECT count FROM votes WHERE user_id = ?', user[:id]).first
+                    ret ? ret[:count] : 0
+                  end
 
-    candidates = db.query('SELECT * FROM candidates')
+    candidates = c_names
     if user.nil?
       return erb :vote, locals: { candidates: candidates, message: '個人情報に誤りがあります' }
     elsif user[:votes] < (params[:vote_count].to_i + voted_count)
@@ -149,12 +162,12 @@ SQL
       return erb :vote, locals: { candidates: candidates, message: '投票理由を記入してください' }
     end
 
-    params[:vote_count].to_i.times do
-      result = db.xquery('INSERT INTO votes (user_id, candidate_id, keyword) VALUES (?, ?, ?)',
-                user[:id],
-                candidate[:id],
-                params[:keyword])
-    end
+    db.xquery('INSERT INTO votes (user_id, candidate_id, keyword, count) VALUES (?, ?, ?, ?)',
+                              user[:id],
+                              candidate[:id],
+                              params[:keyword],
+                              params[:vote_count].to_i
+             )
     return erb :vote, locals: { candidates: candidates, message: '投票に成功しました' }
   end
 
