@@ -111,7 +111,8 @@ SQL
   get '/candidates/:id' do
     candidate = db.xquery('SELECT * FROM candidates WHERE id = ?', params[:id]).first
     return redirect '/' if candidate.nil?
-    votes = db.xquery('SELECT sum(count) as count FROM votes WHERE candidate_id = ? GROUP BY candidate_id', params[:id]).first[:count]
+    vote_data = db.xquery('SELECT sum(count) as count FROM votes WHERE candidate_id = ? GROUP BY candidate_id', params[:id]).first
+    votes = vote_data.nil? ? 0 : vote_data[:count]
 
     keywords = voice_of_supporter([params[:id]])
     erb :candidate, locals: { candidate: candidate,
