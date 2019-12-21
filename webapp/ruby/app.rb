@@ -87,6 +87,7 @@ SQL
   get '/' do
     candidates = []
     election_query_results = election_results
+
     election_query_results.each_with_index do |r, i|
       # 上位10人と最下位のみ表示
       candidates.push(r) if i < 10 || 28 < i
