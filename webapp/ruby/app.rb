@@ -18,7 +18,7 @@ class Ishocon2::WebApp < Sinatra::Base
   set :protection, true
 
   @@names = nil
-  
+
   helpers do
     def config
       @config ||= {
@@ -51,7 +51,10 @@ class Ishocon2::WebApp < Sinatra::Base
       query = <<SQL
 SELECT c.id, c.name, c.political_party, c.sex, v.count
 FROM candidates AS c
-LEFT OUTER JOIN votes AS v
+LEFT OUTER JOIN
+(SELECT candidate_id, SUM(count) AS count
+FROM votes
+GROUP BY candidate_id) AS v
 ON c.id = v.candidate_id
 ORDER BY v.count DESC
 SQL
@@ -80,7 +83,7 @@ SQL
       @names = db.query('SELECT name FROM candidates').map{|c| c[:name]} unless @names
     end
   end
-  
+
   get '/' do
     candidates = []
     election_results.each_with_index do |r, i|
@@ -108,7 +111,8 @@ SQL
   get '/candidates/:id' do
     candidate = db.xquery('SELECT * FROM candidates WHERE id = ?', params[:id]).first
     return redirect '/' if candidate.nil?
-    votes = db.xquery('SELECT count FROM votes WHERE candidate_id = ?', params[:id]).first[:count]
+    votes = db.xquery('SELECT sum(count) as count FROM votes WHERE candidate_id = ? GROUP BY candidate_id', params[:id]).first[:count]
+
     keywords = voice_of_supporter([params[:id]])
     erb :candidate, locals: { candidate: candidate,
                               votes: votes,
