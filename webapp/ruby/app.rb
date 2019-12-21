@@ -93,9 +93,7 @@ SQL
       candidates.push(r) if i < 10 || 28 < i
     end
 
-    parties_set = db.query('SELECT political_party FROM candidates GROUP BY political_party')
-    parties = {}
-    parties_set.each { |a| parties[a[:political_party]] = 0 }
+    parties = Hash.new(0)
     election_query_results.each do |r|
       parties[r[:political_party]] += r[:count] || 0
     end
